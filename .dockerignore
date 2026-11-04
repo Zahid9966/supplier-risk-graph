@@ -1,0 +1,10 @@
+.venv
+data/raw
+data/bronze
+data/silver
+data/gold
+data/sim_truth
+reports
+tests
+.git
+__pycache__

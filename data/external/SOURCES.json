@@ -1,0 +1,13 @@
+{
+  "retrieved_utc": "2026-11-04T07:24:09+00:00",
+  "world_bank": "https://api.worldbank.org/v2/country/all/indicator/<indicator>?format=json&per_page=20000&date=2018:2024",
+  "indicators": {
+    "GOV_WGI_PV.EST": "political_stability",
+    "GOV_WGI_GE.EST": "gov_effectiveness",
+    "GOV_WGI_RL.EST": "rule_of_law",
+    "LP.LPI.OVRL.XQ": "lpi_overall"
+  },
+  "ofac_file": "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ADD.CSV",
+  "ofac_rows": 25166,
+  "countries_kept": 34
+}

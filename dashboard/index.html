@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Supplier Risk Graph</title>
+<style>
+:root{--bg:#0f1419;--panel:#171e26;--ink:#e6edf3;--mut:#8b98a5;--line:#2a3541;--acc:#4da3ff;--hot:#ff6b5e;--warm:#f2b84b;--ok:#4cc38a}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fa;--panel:#fff;--ink:#1f2328;--mut:#59636e;--line:#d0d7de;--acc:#0969da;--hot:#cf222e;--warm:#9a6700;--ok:#1a7f37}}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+h1{font-size:18px;margin:0}.mut{color:var(--mut)}.banner{background:var(--panel);border-left:3px solid var(--warm);padding:8px 14px;margin:12px 20px;border-radius:4px}
+main{display:grid;grid-template-columns:minmax(380px,1fr) minmax(420px,1.2fr);gap:14px;padding:0 20px 24px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto}
+h2{font-size:14px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+table{border-collapse:collapse;width:100%}th,td{padding:4px 6px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--mut);font-weight:600}tr.row{cursor:pointer}tr.row:hover{background:rgba(77,163,255,.12)}td.n{text-align:right;font-variant-numeric:tabular-nums}
+.bar{display:inline-block;height:8px;background:var(--hot);border-radius:2px;vertical-align:middle}
+input,select,button{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:4px 8px;font:inherit}button{cursor:pointer;background:var(--acc);color:#fff;border-color:var(--acc)}
+.kpis{display:flex;gap:10px;flex-wrap:wrap;margin:0 20px}.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px}.kpi b{display:block;font-size:20px}
+svg text{fill:var(--ink);font-size:10px}.tag{font-size:11px;padding:1px 6px;border:1px solid var(--line);border-radius:10px;color:var(--mut)}
+</style></head><body>
+<header><h1>Supplier Risk Graph</h1><span class="mut" id="asof"></span></header>
+<div class="banner"><b>Simulated data.</b> Suppliers, links and incidents are synthetic; only country covariates are real (World Bank, OFAC). Scores show a method, not real-world accuracy. <a href="/docs" style="color:var(--acc)">API docs</a></div>
+<div class="kpis" id="kpis"></div>
+<main>
+<section><h2>Highest 3-month disruption risk</h2>
+ <div style="margin-bottom:8px">tier <select id="tier"><option value="">all</option><option>1</option><option>2</option><option>3</option><option>4</option></select>
+ country <input id="country" size="4" placeholder="ISO3"> <button id="go">filter</button></div>
+ <table id="tbl"><thead><tr><th>#</th><th>supplier</th><th>tier</th><th>ctry</th><th>P(3m)</th><th>graph uplift</th><th></th></tr></thead><tbody></tbody></table></section>
+<section><h2 id="dtitle">Supplier detail</h2><div id="detail" class="mut">Select a supplier. Graph: upstream suppliers on the left, customers on the right; node colour = risk.</div><svg id="g" width="100%" height="320"></svg></section>
+<section><h2>What-if: suppliers disrupted</h2>
+ <input id="shock" size="30" placeholder="SUP0001, SUP0002"> <button id="sim">propagate</button>
+ <div id="simout" class="mut" style="margin-top:8px">Forces the listed suppliers to failure and propagates down the dependency graph (noisy-OR, pass-through = share x 0.5 if alternative source).</div></section>
+<section><h2>Products (BOM exposure)</h2><table id="prod"><thead><tr><th>product</th><th>revenue</th><th>P(any supplier hit)</th><th>expected exposed</th></tr></thead><tbody></tbody></table></section>
+<section style="grid-column:1/-1"><h2>Evaluation (test months, simulated data)</h2><div id="metrics" class="mut">loading...</div></section>
+</main>
+<script>
+const $=s=>document.querySelector(s), pct=x=>(100*x).toFixed(1)+'%', usd=x=>'$'+(x/1e6).toFixed(1)+'M';
+const col=p=>p>0.15?'var(--hot)':p>0.07?'var(--warm)':'var(--ok)';
+async function j(u,o){const r=await fetch(u,o);if(!r.ok)throw new Error(u+' '+r.status);return r.json()}
+async function load(){
+ const h=await j('/health');$('#asof').textContent='as of '+h.as_of+' · '+h.suppliers+' suppliers · '+h.edges+' links';
+ const q=new URLSearchParams({limit:40});if($('#tier').value)q.set('tier',$('#tier').value);if($('#country').value)q.set('country',$('#country').value);
+ const rows=await j('/suppliers?'+q);const mean=rows.reduce((a,r)=>a+r.p_disruption_3m,0)/Math.max(rows.length,1);
+ $('#kpis').innerHTML=`<div class="kpi">top-40 mean P(3m)<b>${pct(mean)}</b></div><div class="kpi">sole-sourced in top-40<b>${rows.filter(r=>r.sole_source).length}</b></div><div class="kpi">top-40 with graph uplift>1pt<b>${rows.filter(r=>r.graph_uplift>0.01).length}</b></div>`;
+ $('#tbl tbody').innerHTML=rows.map(r=>`<tr class="row" data-id="${r.supplier_id}"><td>${r.rank}</td><td>${r.supplier_id} <span class="mut">${r.name}</span></td><td>${r.tier}</td><td>${r.country_iso3}</td><td class="n">${pct(r.p_disruption_3m)}</td><td class="n">${(r.graph_uplift*100>=0?'+':'')+(r.graph_uplift*100).toFixed(1)}pt</td><td><span class="bar" style="width:${Math.min(r.p_disruption_3m*300,90)}px"></span></td></tr>`).join('');
+ document.querySelectorAll('tr.row').forEach(t=>t.onclick=()=>detail(t.dataset.id));
+}
+async function detail(id){
+ const d=await j('/suppliers/'+id), g=await j('/graph/'+id+'?depth=2');
+ $('#dtitle').textContent=id+' · '+d.name;
+ $('#detail').innerHTML=`P(3m) <b>${pct(d.p_disruption_3m)}</b> (rank ${d.rank}) · without graph features ${pct(d.p_without_graph_contagion)} · own distress ${d.own_composite==null?'n/a':d.own_composite.toFixed(2)} · propagated ${d.propagated_risk.toFixed(2)} · ${d.n_suppliers} suppliers${d.sole_source?' <span class="tag">sole source</span>':''} · criticality ${d.criticality.toFixed(2)}<br>
+  <span class="mut">strongest upstream drivers: ${d.top_upstream_drivers.map(x=>x.supplier_id+' ('+x.contribution.toFixed(3)+')').join(', ')||'none'}</span>`;
+ draw(g,id)}
+function draw(g,id){const svg=$('#g');const W=svg.clientWidth||600,Hh=320;const byT={};g.nodes.forEach(n=>(byT[n.tier]=byT[n.tier]||[]).push(n));
+ const tiers=Object.keys(byT).map(Number).sort((a,b)=>b-a);const pos={};
+ tiers.forEach((t,i)=>{const arr=byT[t];arr.forEach((n,k)=>{pos[n.supplier_id]=[30+i*(W-60)/Math.max(tiers.length-1,1),20+(k+.5)*(Hh-40)/arr.length]})});
+ let s='';g.edges.forEach(e=>{const a=pos[e.from_supplier],b=pos[e.to_supplier];if(a&&b)s+=`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="var(--line)" stroke-width="${0.5+e.pass_weight*3}"/>`});
+ g.nodes.forEach(n=>{const p=pos[n.supplier_id];s+=`<g><circle cx="${p[0]}" cy="${p[1]}" r="${n.supplier_id==id?8:5}" fill="${col(n.p_disruption_3m)}" stroke="${n.supplier_id==id?'var(--acc)':'none'}" stroke-width="2"><title>${n.supplier_id} ${n.name} P=${pct(n.p_disruption_3m)}</title></circle></g>`});
+ svg.innerHTML=s}
+$('#go').onclick=load;
+$('#sim').onclick=async()=>{const ids=$('#shock').value.split(/[ ,]+/).filter(Boolean);if(!ids.length)return;
+ try{const r=await j('/simulate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({shocked:ids})});
+ $('#simout').innerHTML=`<b>${r.n_impacted}</b> downstream suppliers impacted. Top: `+r.impacted.slice(0,8).map(x=>`${x.supplier_id} (t${x.tier}, ${pct(x.impact)})`).join(', ')+`<br>Products: `+r.products.filter(p=>p.what_if_revenue_at_risk_usd>0).slice(0,5).map(p=>`${p.product} ${usd(p.what_if_revenue_at_risk_usd)}`).join(', ')+`<br><span class="mut">${r.note}</span>`}catch(e){$('#simout').textContent='error: '+e.message}};
+(async()=>{await load();
+ const p=await j('/products');$('#prod tbody').innerHTML=p.slice(0,8).map(x=>`<tr><td>${x.product}</td><td class="n">${usd(x.annual_revenue_usd)}</td><td class="n">${pct(x.prob_any_supplier_disrupted)}</td><td class="n">${usd(x.expected_revenue_exposed_usd)}</td></tr>`).join('');
+ try{const m=await j('/metrics'),M=m.models;const ks=['base_rate','heur_propagated','logit_own','hgb_own','hgb_own_struct','hgb_full','ORACLE_sim_only'].filter(k=>M[k]);
+ $('#metrics').innerHTML='<table><tr><th>model</th><th>ROC-AUC</th><th>PR-AUC</th><th>precision@5%</th><th>lift@5%</th></tr>'+ks.map(k=>`<tr><td>${k}</td><td class="n">${M[k].roc_auc.toFixed(3)}</td><td class="n">${M[k].pr_auc.toFixed(3)}</td><td class="n">${M[k].precision_at_5pct.toFixed(3)}</td><td class="n">${M[k].lift_at_5pct.toFixed(2)}x</td></tr>`).join('')+`</table><p class="mut">Base rate ${(m.splits.test.base_rate*100).toFixed(1)}% over ${m.splits.test.rows} test rows. ORACLE uses simulator latents (unattainable ceiling). Full tables: reports/REPORT.md</p>`}catch(e){$('#metrics').textContent='no evaluation report found'}})();
+</script></body></html>
